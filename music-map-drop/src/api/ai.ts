@@ -1,6 +1,6 @@
 import type { AiAskRequest, AiAskResponse } from '../types/ai';
 
-// 백엔드 API URL (개발 환경에서는 에뮬레이터, 프로덕션에서는 실제 URL)
+// Backend API URL (emulator in dev, production URL in prod)
 const getApiUrl = () => {
   if (import.meta.env.DEV) {
     // Firebase Functions Emulator
@@ -15,11 +15,11 @@ export const askAi = async (request: AiAskRequest): Promise<AiAskResponse> => {
   const url = getApiUrl();
   
   try {
-    // audioUrl이 있는 경우 FormData로 전송, 아니면 JSON으로 전송
+    // If audioUrl present send as FormData, else JSON
     if (request.audioUrl) {
       let blob: Blob;
       
-      // Blob URL인 경우 실제 Blob으로 변환
+      // Resolve blob from blob URL
       if (request.audioUrl.startsWith('blob:')) {
         const blobResponse = await fetch(request.audioUrl);
         if (!blobResponse.ok) {
@@ -27,19 +27,19 @@ export const askAi = async (request: AiAskRequest): Promise<AiAskResponse> => {
         }
         blob = await blobResponse.blob();
       } else if (request.audioUrl.startsWith('data:')) {
-        // Data URL인 경우 Blob으로 변환
+        // Convert from data URL to Blob
         const response = await fetch(request.audioUrl);
         blob = await response.blob();
       } else {
         throw new Error('Unsupported audio URL format');
       }
       
-      // Blob 크기 확인 (10MB 제한)
+      // Check blob size (10MB limit)
       if (blob.size > 10 * 1024 * 1024) {
         throw new Error('Audio file is too large (max 10MB)');
       }
       
-      // FormData로 전송
+      // Send as FormData
       const formData = new FormData();
       formData.append('audio', blob, 'recording.webm');
       formData.append('location', JSON.stringify(request.location));
@@ -72,7 +72,7 @@ export const askAi = async (request: AiAskRequest): Promise<AiAskResponse> => {
       const data: AiAskResponse = await response.json();
       return data;
     } else {
-      // 텍스트만 있는 경우 JSON으로 전송
+      // Text only — send JSON
       console.log('AI API call (JSON):', url, {
         hasText: !!request.text,
         hasAudio: false,
@@ -108,7 +108,7 @@ export const askAi = async (request: AiAskRequest): Promise<AiAskResponse> => {
       name: error?.name,
     });
     
-    // 네트워크 에러인 경우 더 친화적인 메시지
+    // Friendlier message on network error
     if (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError') {
       throw new Error('Cannot connect to backend server. Please check if the backend is running.');
     }

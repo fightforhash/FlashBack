@@ -6,7 +6,10 @@ import { MicButton } from './components/MicButton';
 import { AIAnswerSheet } from './components/AIAnswerSheet';
 import { DropDetailModal } from './components/DropDetailModal';
 import { ToastContainer } from './components/Toast';
+import { ARView } from './components/ARView';
 import { useAiConversation } from './hooks/useAiConversation';
+import { db } from './firebase';
+import { collection, query, onSnapshot, limit } from 'firebase/firestore';
 import type { Drop } from './types/drop';
 
 // Google Maps types - extend Window with google namespace
@@ -18,138 +21,117 @@ declare global {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-const seedDrops: Drop[] = [
-  {
-    id: 'seoul-1',
-    title: 'N Seoul Tower',
-    artist: 'City Nights',
-    mood: 'night',
-    text: 'Namsan night view is truly artistic',
-    lat: 37.5512,
-    lng: 126.9882,
-    createdAt: Date.now() - 1000 * 60 * 10,
-  },
-  {
-    id: 'seoul-2',
-    title: 'Seoul City Hall',
-    artist: 'Rainy Mood',
-    mood: 'calm',
-    text: 'The feeling in front of City Hall on a rainy day',
-    lat: 37.5665,
-    lng: 126.9780,
-    createdAt: Date.now() - 1000 * 60 * 5,
-  },
-  {
-    id: 'sea-1',
-    title: 'Seattle Downtown',
-    artist: 'Chill Vibes',
-    mood: 'chill',
-    text: 'Vibes near Pike Place Market',
-    lat: 47.6062,
-    lng: -122.3321,
-    createdAt: Date.now() - 1000 * 60 * 2,
-  },
-];
+// seedDrops removed - only use Firestore data
 
 const MyDropsList = ({ drops, onSelect, onMapCenterChange }: { drops: Drop[]; onSelect: (drop: Drop) => void; onMapCenterChange: (drop: Drop) => void; }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
     <div style={{
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      maxHeight: '35vh',
-      overflowY: 'auto',
-      background: 'rgba(0,0,0,0.75)',
-      color: 'white',
-      padding: '12px 16px',
-      backdropFilter: 'blur(6px)',
+      width: '100%',
     }}>
-      <div style={{ fontWeight: 'bold', marginBottom: 8 }}>My Drops ({drops.length})</div>
-      {drops.length === 0 && <div style={{ color: '#bbb' }}>No drops yet. Add one from the modal.</div>}
-      {drops.map((drop) => (
-        <div
-          key={drop.id}
-          onClick={() => onMapCenterChange(drop)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '12px 0',
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
-            cursor: 'pointer',
-            transition: 'background-color 0.2s',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }}
-        >
-          <div style={{
-            width: 40,
-            height: 40,
-            borderRadius: 8,
-            background: '#111',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 14,
-            color: '#ffde59',
-            flexShrink: 0,
-          }}>
-            LP
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
-              {drop.title}
-            </div>
-            <div style={{ fontSize: 12, color: '#ccc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
-              {drop.artist || 'Unknown Artist'} · {drop.mood || 'mood'}
-            </div>
-            {drop.text && (
-              <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {drop.text}
+      {/* Header tab — always visible */}
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(8px)',
+          color: 'white',
+          border: 'none',
+          borderRadius: isExpanded ? '16px 16px 0 0' : '16px 16px 0 0',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 700,
+        }}
+      >
+        <span>🎵 My Drops ({drops.length})</span>
+        <span style={{ fontSize: 16, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)' }}>▲</span>
+      </button>
+
+      {/* List body — visible when expanded */}
+      {isExpanded && (
+        <div style={{
+          maxHeight: '28vh',
+          overflowY: 'auto',
+          background: 'rgba(0,0,0,0.75)',
+          color: 'white',
+          padding: '4px 16px 12px',
+          backdropFilter: 'blur(6px)',
+        }}>
+          {drops.length === 0 && <div style={{ color: '#bbb', padding: '8px 0', fontSize: 13 }}>No drops yet. Add one!</div>}
+          {drops.map((drop) => (
+            <div
+              key={drop.id}
+              onClick={() => onMapCenterChange(drop)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 0',
+                borderBottom: '1px solid rgba(255,255,255,0.08)',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                background: drop.coverUrl ? `url(${drop.coverUrl}) center/cover` : '#222',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                color: '#ffde59',
+                flexShrink: 0,
+                overflow: 'hidden',
+              }}>
+                {!drop.coverUrl && '🎵'}
               </div>
-            )}
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(drop);
-            }}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'rgba(255, 255, 255, 0.15)',
-              color: 'white',
-              border: '1px solid rgba(255, 255, 255, 0.3)',
-              borderRadius: '20px',
-              fontSize: '12px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.15)';
-            }}
-          >
-            Details
-          </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {drop.title}
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {drop.artist || 'Unknown'} · {drop.mood || ''}
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(drop);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                  color: 'white',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: '16px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Detail
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 };
 
 function App() {
-  const [myDrops, setMyDrops] = useState<Drop[]>(seedDrops);
+  const [myDrops, setMyDrops] = useState<Drop[]>([]);
   const initialCenter = useMemo(
-    () => ({ lat: seedDrops[0].lat, lng: seedDrops[0].lng }),
+    () => ({ lat: 37.5665, lng: 126.9780 }), // Default: Seoul
     []
   );
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(initialCenter);
@@ -159,48 +141,190 @@ function App() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const autocompleteRef = useRef<any>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type?: 'error' | 'success' | 'info' }>>([]);
+  const [showAR, setShowAR] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<'pending' | 'granted' | 'denied'>('pending');
   const lastQuestionRef = useRef<string>('');
+  const isInitialLoadRef = useRef<boolean>(true);
 
-  // AI 대화 훅
+  // AI conversation hook
   const aiConversation = useAiConversation();
 
-  // Toast 추가 함수
+  // Toast add
   const addToast = (message: string, type: 'error' | 'success' | 'info' = 'info') => {
     const id = Date.now().toString();
     setToasts((prev) => [...prev, { id, message, type }]);
   };
 
-  // Toast 제거 함수
+  // Toast remove
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   };
 
-  // 현재 위치 가져오기
+  // Firestore real-time listener (onSnapshot) — only Firestore data, no mock
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+    const dropsRef = collection(db, 'drops');
+    
+    // Helper function to parse location
+    const parseLocation = (location: any): { lat: number; lng: number } => {
+      if (!location) {
+        return { lat: 0, lng: 0 };
+      }
+      
+      if (typeof location === 'string') {
+        // String format: "[47.83° N, 122.27° W]"
+        const match = location.match(/\[([\d.]+)°\s*([NS]),\s*([\d.]+)°\s*([EW])\]/);
+        if (match) {
+          let lat = parseFloat(match[1]);
+          if (match[2] === 'S') lat = -lat;
+          let lng = parseFloat(match[3]);
+          if (match[4] === 'W') lng = -lng;
+          return { lat, lng };
+        } else {
+          // Fallback: extract numbers only
+          const numbers = location.match(/[\d.]+/g);
+          if (numbers && numbers.length >= 2) {
+            return { lat: parseFloat(numbers[0]), lng: parseFloat(numbers[1]) };
+          }
+        }
+        return { lat: 0, lng: 0 };
+      } else if (typeof location === 'object') {
+        // GeoPoint or plain object
+        return {
+          lat: location.latitude ?? location._latitude ?? 0,
+          lng: location.longitude ?? location._longitude ?? 0,
+        };
+      }
+      return { lat: 0, lng: 0 };
+    };
+    
+    // Helper function to process snapshot
+    const processSnapshot = (querySnapshot: any) => {
+      const loadedDrops: Drop[] = [];
+      let totalDocs = 0;
+      let skippedDocs = 0;
+      
+      querySnapshot.forEach((doc: any) => {
+        totalDocs++;
+        try {
+          const data = doc.data();
+          const { lat, lng } = parseLocation(data.location);
+          // Only add if valid location (exclude 0,0)
+          if (lat !== 0 && lng !== 0 && !isNaN(lat) && !isNaN(lng)) {
+            loadedDrops.push({
+              id: doc.id,
+              title: data.trackName || 'Unknown Track',
+              artist: data.artistName || 'Unknown Artist',
+              coverUrl: data.coverUrl || '',
+              previewUrl: data.previewUrl || '',
+              text: data.userText || '',
+              mood: data.mood || 'neutral',
+              lat: lat,
+              lng: lng,
+              createdAt: data.timestamp?.toMillis?.() || data.timestamp?.seconds * 1000 || Date.now(),
+            });
+          } else {
+            skippedDocs++;
+            console.warn(`⚠️ Skipped doc ${doc.id} - invalid location:`, { lat, lng, location: data.location });
+          }
+        } catch (docError: any) {
+          skippedDocs++;
+          console.error(`❌ Failed to process drop ${doc.id}:`, docError);
+          console.error('Doc data:', doc.data());
+        }
+      });
+      
+      // Sort by timestamp (client-side)
+      loadedDrops.sort((a, b) => b.createdAt - a.createdAt);
+      
+      // Use only Firestore data (no mock)
+      setMyDrops(loadedDrops);
+      
+      // Set map center to first drop on initial load only
+      if (loadedDrops.length > 0 && isInitialLoadRef.current) {
+        setMapCenter({ lat: loadedDrops[0].lat, lng: loadedDrops[0].lng });
+        isInitialLoadRef.current = false;
+      }
+    };
+    
+    // Real-time listener — no composite index required
+    let unsubscribe: (() => void) | undefined;
+    
+    try {
+      // No composite index required
+      const q = query(dropsRef, limit(100));
+      unsubscribe = onSnapshot(
+        q,
+        (querySnapshot) => processSnapshot(querySnapshot),
+        (error: any) => {
+          console.error('❌ Failed to set up Firestore listener:', error);
+          console.error('Error details:', {
+            message: error?.message,
+            code: error?.code,
           });
-        },
-        (error) => {
-          console.error('Failed to get location:', error);
-          // 기본값으로 서울 사용
-          setCurrentLocation({
-            latitude: 37.5665,
-            longitude: 126.9780,
-          });
+          // No fallback - keep empty array if Firestore fails
+          setMyDrops([]);
         }
       );
-    } else {
-      // 기본값으로 서울 사용
-      setCurrentLocation({
-        latitude: 37.5665,
-        longitude: 126.9780,
+      
+      console.log('✅ Firestore real-time listener set up successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to set up Firestore listener:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack,
       });
+      // No fallback - keep empty array if Firestore fails
+      setMyDrops([]);
     }
+    
+    // Cleanup: unsubscribe on unmount
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+        console.log('Firestore listener unsubscribed');
+      }
+    };
+  }, []); // Run once on mount
+
+  // Request location (on button tap or auto)
+  const watchIdRef = useRef<number | undefined>(undefined);
+  const requestLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsStatus('denied');
+      setCurrentLocation({ latitude: 37.5665, longitude: 126.9780 });
+      return;
+    }
+    setGpsStatus('pending');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const loc = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        setCurrentLocation(loc);
+        setMapCenter({ lat: loc.latitude, lng: loc.longitude });
+        setGpsStatus('granted');
+        // Start watchPosition after success
+        if (watchIdRef.current === undefined) {
+          watchIdRef.current = navigator.geolocation.watchPosition(
+            (pos) => setCurrentLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+            () => {},
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+          );
+        }
+      },
+      (error) => {
+        console.warn('GPS failed:', error.message);
+        setGpsStatus('denied');
+        setCurrentLocation({ latitude: 37.5665, longitude: 126.9780 });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
+  useEffect(() => {
+    requestLocation();
+    return () => {
+      if (watchIdRef.current !== undefined) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
   }, []);
 
   // Initialize Google Places Autocomplete
@@ -269,57 +393,51 @@ function App() {
   }, []);
 
   const handleAddDrop = (drop: Drop) => {
-    setMyDrops((prev) => [drop, ...prev]);
+    // Firestore onSnapshot updates myDrops; no local append to avoid duplicates
+    console.log('Drop added to Firestore:', drop.id, drop.title);
     setMapCenter({ lat: drop.lat, lng: drop.lng });
   };
 
   const handleSelectDrop = (drop: Drop) => {
-    setSelectedDrop(drop); // 상세 모달 표시
+    setSelectedDrop(drop); // Show detail modal
   };
 
   const handleMapCenterChange = (drop: Drop) => {
     setMapCenter({ lat: drop.lat, lng: drop.lng });
   };
 
-  // 마이크 녹음 완료 핸들러
+  // Mic recording complete — use map center as AI location
   const handleRecordingComplete = async (audioBlob: Blob) => {
-    if (!currentLocation) {
-      addToast('Unable to get location information.', 'error');
-      aiConversation.setStatus('idle');
-      return;
-    }
+    const aiLocation = {
+      latitude: mapCenter.lat,
+      longitude: mapCenter.lng,
+    };
+    
+    console.log('AI query location (from map center):', aiLocation);
 
     try {
-      // Blob을 URL로 변환
+      // Convert Blob to URL
       const audioUrl = URL.createObjectURL(audioBlob);
       
-      // 백엔드에 전송하고 응답 받기
-      const response = await aiConversation.askWithAudio(audioUrl, currentLocation);
+      // Send to backend and get response — use map center as location
+      const response = await aiConversation.askWithAudio(audioUrl, aiLocation);
       
-      // 응답에서 직접 ttsAudioUrl 가져오기
+      // If TTS audio present, set playing (AudioPlayer auto-plays)
       if (response?.ttsAudioUrl) {
         aiConversation.setStatus('playing');
-        const audio = new Audio(response.ttsAudioUrl);
-        audio.onended = () => {
-          aiConversation.setStatus('idle');
-        };
-        audio.onerror = () => {
-          aiConversation.setStatus('idle');
-        };
-        await audio.play();
+        // Auto-played by AudioPlayer
       } else {
-        // TTS 오디오가 없으면 상태만 idle로 변경
         aiConversation.setStatus('idle');
       }
       
-      // 임시 URL 정리
+      // Revoke temp URL
       URL.revokeObjectURL(audioUrl);
     } catch (error: any) {
-      console.error('AI 질문 처리 실패:', error);
+      console.error('AI question failed:', error);
       aiConversation.setStatus('idle');
       
-      // 네트워크 에러인 경우
-      if (error?.message?.includes('Failed to fetch') || error?.message?.includes('연결할 수 없습니다') || error?.message?.includes('cannot connect')) {
+      // Network error
+        if (error?.message?.includes('Failed to fetch') || error?.message?.includes('cannot connect')) {
         addToast('Network connection failed. Please try again.', 'error');
       } else {
         addToast(error?.message || 'An error occurred while processing AI question.', 'error');
@@ -327,38 +445,64 @@ function App() {
     }
   };
 
-  // TTS 오디오 재생 핸들러
-  const handlePlayTtsAudio = (audioUrl: string) => {
-    const audio = new Audio(audioUrl);
-    audio.onended = () => {
-      aiConversation.setStatus('idle');
-    };
-    audio.onerror = () => {
-      aiConversation.setStatus('idle');
-    };
-    audio.play().catch((err) => {
-      console.error('TTS 오디오 재생 실패:', err);
-      aiConversation.setStatus('idle');
-    });
-  };
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       {/* 1. map (background) */}
       <MapComponent drops={myDrops} center={mapCenter} searchedLocation={searchedPlace} />
 
-      {/* 2. Top Control Bar - Clean unified design */}
+      {/* GPS Permission Banner */}
+      {gpsStatus === 'denied' && (
+        <div style={{
+          position: 'absolute',
+          top: '70px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1002,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+          maxWidth: '90%',
+        }}>
+          <span style={{ fontSize: '20px' }}>📍</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: 'bold' }}>Location not available</div>
+            <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+              Tap to enable, or check Settings &gt; Safari &gt; Location
+            </div>
+          </div>
+          <button
+            onClick={requestLocation}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '20px',
+              fontSize: '13px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Enable
+          </button>
+        </div>
+      )}
+
+      {/* 2. Top Bar - Location Search only */}
       <div style={{
         position: 'absolute',
         top: '16px',
         left: '16px',
         right: '16px',
         zIndex: 1001,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
       }}>
-        {/* Row 1: Location Search */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -383,8 +527,27 @@ function App() {
             }}
           />
         </div>
+      </div>
 
-        {/* Row 2: AI Input + Mic */}
+      {/* Bottom Fixed Area: My Drops + Chat Bar */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1001,
+        display: 'flex',
+        flexDirection: 'column',
+      }}>
+      {/* My Drops — above chat bar */}
+      <MyDropsList drops={myDrops} onSelect={handleSelectDrop} onMapCenterChange={handleMapCenterChange} />
+
+      {/* Chat Bar */}
+      <div style={{
+        padding: '10px 16px 20px 16px',
+        background: 'rgba(0,0,0,0.9)',
+        backdropFilter: 'blur(8px)',
+      }}>
         <div style={{
           display: 'flex',
           gap: '10px',
@@ -395,18 +558,17 @@ function App() {
               flex: 1,
               display: 'flex',
               alignItems: 'center',
-              backgroundColor: 'rgba(255, 255, 255, 0.98)',
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
               borderRadius: '28px',
               padding: '4px 16px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
             }}>
               <span style={{ marginRight: '8px', fontSize: '16px' }}>🤖</span>
               <input
                 type="text"
-                placeholder={currentLocation ? "Ask AI about music nearby..." : "Loading..."}
-                disabled={!currentLocation}
+                placeholder="Ask AI about music nearby..."
                 onKeyDown={async (e) => {
-                  if (e.key === 'Enter' && currentLocation && e.currentTarget.value.trim()) {
+                  if (e.key === 'Enter' && e.currentTarget.value.trim()) {
                     const text = e.currentTarget.value.trim();
                     if (lastQuestionRef.current === text && aiConversation.status !== 'idle') {
                       aiConversation.reset();
@@ -416,14 +578,17 @@ function App() {
                     }
                     lastQuestionRef.current = text;
                     e.currentTarget.value = '';
+                    
+                    const aiLocation = {
+                      latitude: mapCenter.lat,
+                      longitude: mapCenter.lng,
+                    };
+                    console.log('AI query location (from map center):', aiLocation);
+                    
                     try {
-                      const response = await aiConversation.askWithText(text, currentLocation);
+                      const response = await aiConversation.askWithText(text, aiLocation);
                       if (response?.ttsAudioUrl) {
                         aiConversation.setStatus('playing');
-                        const audio = new Audio(response.ttsAudioUrl);
-                        audio.onended = () => aiConversation.setStatus('idle');
-                        audio.onerror = () => aiConversation.setStatus('idle');
-                        await audio.play();
                       } else {
                         aiConversation.setStatus('idle');
                       }
@@ -458,13 +623,22 @@ function App() {
             }}
             onRecordingComplete={handleRecordingComplete}
             onError={(error) => addToast(error.message, 'error')}
-            disabled={!currentLocation}
           />
         </div>
       </div>
+      </div>{/* End Bottom Fixed Area */}
 
       {/* 3. Music Drop Creator (Bottom left) */}
-      <DropCreator onAddDrop={handleAddDrop} />
+      <DropCreator 
+        onAddDrop={handleAddDrop} 
+        userLocation={currentLocation}
+        mapLocation={searchedPlace 
+          ? { lat: searchedPlace.lat, lng: searchedPlace.lng } 
+          : mapCenter 
+            ? { lat: mapCenter.lat, lng: mapCenter.lng }
+            : null
+        }
+      />
 
       {/* 4. AI Answer Sheet */}
       <AIAnswerSheet
@@ -473,18 +647,64 @@ function App() {
         tracks={aiConversation.answerTracks}
         error={aiConversation.error}
         ttsAudioUrl={aiConversation.ttsAudioUrl}
-        onPlayAudio={handlePlayTtsAudio}
+        onAudioEnded={() => aiConversation.setStatus('idle')}
         onDismiss={aiConversation.reset}
+        onClearAnswer={aiConversation.reset}
         autoDismissSeconds={15}
       />
 
-      {/* 5. my drops list (bottom sheet style) */}
-      <MyDropsList drops={myDrops} onSelect={handleSelectDrop} onMapCenterChange={handleMapCenterChange} />
-
-      {/* 6. Drop Detail Modal */}
+      {/* 5. Drop Detail Modal */}
       <DropDetailModal drop={selectedDrop} onClose={() => setSelectedDrop(null)} />
 
-      {/* 7. Toast Container */}
+      {/* AR Toggle — left center */}
+      <button
+        type="button"
+        onClick={() => setShowAR(true)}
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: 16,
+          transform: 'translateY(-50%)',
+          width: 56,
+          height: 56,
+          borderRadius: 16,
+          border: '2px solid rgba(255,255,255,0.9)',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: 'pointer',
+          boxShadow: '0 4px 20px rgba(102,126,234,0.5)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1,
+          zIndex: 1001,
+          transition: 'transform 0.2s',
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(-50%) scale(1)'; }}
+        title="AR View"
+      >
+        <span style={{ fontSize: 22, lineHeight: 1 }}>📷</span>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1 }}>AR</span>
+      </button>
+
+      {/* 8. AR View Overlay */}
+      {showAR && (
+        <ARView
+          drops={myDrops}
+          userLocation={currentLocation || { latitude: mapCenter.lat, longitude: mapCenter.lng }}
+          onClose={() => setShowAR(false)}
+          onSelectDrop={(drop) => {
+            setShowAR(false);
+            setSelectedDrop(drop);
+          }}
+        />
+      )}
+
+      {/* 9. Toast Container */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );

@@ -20,7 +20,7 @@ export const Toast: React.FC<ToastProps> = ({
       setIsVisible(false);
       setTimeout(() => {
         onClose?.();
-      }, 300); // 애니메이션 시간
+      }, 300); // Animation duration
     }, duration);
 
     return () => clearTimeout(timer);

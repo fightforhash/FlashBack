@@ -17,6 +17,13 @@ export const useAiConversation = () => {
       
       const response: AiAskResponse = await askAi(request);
       
+      console.log("AI Response received:", {
+        hasAnswerText: !!response.answerText,
+        tracksCount: response.tracks?.length || 0,
+        hasTtsAudioUrl: !!response.ttsAudioUrl,
+        ttsAudioUrlLength: response.ttsAudioUrl?.length || 0
+      });
+      
       setLastAnswer(response.answerText);
       setAnswerTracks(response.tracks || []);
       setTtsAudioUrl(response.ttsAudioUrl);

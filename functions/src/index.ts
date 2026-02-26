@@ -1,34 +1,38 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
-import { VertexAI } from "@google-cloud/vertexai";
-import { SpeechClient } from "@google-cloud/speech";
 import { GeoPoint, FieldValue } from "@google-cloud/firestore";
 
-// Load environment variables from .env file in development (emulator)
-// Note: For Firebase Functions Emulator, you can also set env vars in firebase.json
-// or use: firebase emulators:start --only functions --env-file functions/.env
 if (process.env.FUNCTIONS_EMULATOR === "true") {
   try {
-    // Try to load dotenv if available (install with: npm install --save-dev dotenv)
     const dotenv = require("dotenv");
     dotenv.config();
-    console.log("Loaded environment variables from .env file");
-  } catch (error) {
-    // dotenv not installed, use system environment variables
-    console.log("dotenv not available, using system environment variables");
-  }
+  } catch (_) { /* no-op */ }
 }
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// Initialize Vertex AI (Gemini)
 const projectId = process.env.GCLOUD_PROJECT || "flashback-25e2f";
-const location = "us-central1";
-const vertexAI = new VertexAI({ project: projectId, location });
+const gcloudLocation = "us-central1";
 
-// Initialize Speech-to-Text client
-const speechClient = new SpeechClient();
+let _vertexAI: any = null;
+let _speechClient: any = null;
+
+function getVertexAI() {
+  if (!_vertexAI) {
+    const { VertexAI } = require("@google-cloud/vertexai");
+    _vertexAI = new VertexAI({ project: projectId, location: gcloudLocation });
+  }
+  return _vertexAI;
+}
+
+function getSpeechClient() {
+  if (!_speechClient) {
+    const { SpeechClient } = require("@google-cloud/speech");
+    _speechClient = new SpeechClient();
+  }
+  return _speechClient;
+}
 
 // Request data interface
 interface CreateDropRequest {
@@ -73,19 +77,55 @@ export const createDrop = functions.https.onCall(async (data: CreateDropRequest,
   }
 
   try {
-    // In emulator, skip Firestore save to avoid production access
-    if (process.env.FUNCTIONS_EMULATOR === "true") {
-      console.log("Running in emulator - skipping Firestore save (using mock ID)");
-      // Return mock success response for local development
-      const mockId = `mock-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Check for duplicate drops (same trackName + similar location within 100m)
+    const TOLERANCE = 0.001; // ~100m tolerance
+    console.log(`Checking for duplicates: ${trackName} at (${latitude}, ${longitude})`);
+    
+    const existingDrops = await db.collection("drops")
+      .where("trackName", "==", trackName)
+      .limit(50)
+      .get();
+    
+    let isDuplicate = false;
+    for (const doc of existingDrops.docs) {
+      const data = doc.data();
+      const dropLocation = data.location;
+      
+      if (dropLocation && typeof dropLocation === 'object') {
+        const lat = dropLocation.latitude ?? dropLocation._latitude ?? 0;
+        const lng = dropLocation.longitude ?? dropLocation._longitude ?? 0;
+        
+        const latDiff = Math.abs(lat - latitude);
+        const lngDiff = Math.abs(lng - longitude);
+        
+        if (latDiff < TOLERANCE && lngDiff < TOLERANCE) {
+          console.log(`⚠️ Duplicate drop detected: ${trackName} at (${lat}, ${lng}) - skipping save`);
+          isDuplicate = true;
+          break;
+        }
+      }
+    }
+    
+    if (isDuplicate) {
       return { 
-        success: true, 
-        id: mockId, 
-        message: "Drop saved successfully! (Local dev - not saved to Firestore)" 
+        success: false,
+        id: "",
+        message: "Duplicate drop detected. A similar drop already exists at this location."
       };
     }
 
-    // 4. Create object to save to database (Production only)
+    // Save to Firestore (works in both emulator and production with GCP auth)
+    console.log("💾 Saving drop to Firestore...");
+    console.log("Drop data:", {
+      trackName,
+      artistName,
+      latitude,
+      longitude,
+      mood,
+      userText: userText?.substring(0, 50) || ""
+    });
+
+    // 4. Create object to save to database
     const newDrop = {
       // Music information
       artistName: artistName || "Unknown Artist",
@@ -109,8 +149,11 @@ export const createDrop = functions.https.onCall(async (data: CreateDropRequest,
       uid: context.auth?.uid || "anonymous", 
     };
 
-    // 5. Save to 'drops' collection (Production only)
+    // 5. Save to 'drops' collection
+    console.log("📤 Adding document to Firestore collection 'drops'...");
     const docRef = await db.collection("drops").add(newDrop);
+    console.log("✅ Drop saved successfully! Document ID:", docRef.id);
+    console.log("📍 Location saved:", { latitude, longitude });
 
     return { 
       success: true, 
@@ -123,7 +166,7 @@ export const createDrop = functions.https.onCall(async (data: CreateDropRequest,
     console.error("Error details:", error?.message || String(error));
     console.error("Error stack:", error?.stack);
     
-    // 더 자세한 에러 정보 제공
+    // Provide more detailed error info
     const errorMessage = error?.message || "An error occurred while saving.";
     throw new functions.https.HttpsError(
       "internal", 
@@ -226,7 +269,7 @@ export const tts = functions.runWith({
   }
 });
 
-// Storytelling endpoint: AI가 컨텍스트 추가 후 TTS
+// Storytelling endpoint: AI adds context then TTS
 interface StorytellingRequest {
   title: string;
   artist?: string;
@@ -286,7 +329,7 @@ export const storytelling = functions.runWith({
       hour12: true,
       timeZone: timezone || 'UTC', // Use client timezone if available
     });
-    
+
     console.log("Formatted date:", formattedDate);
 
     // Generate storytelling text with Gemini AI
@@ -300,7 +343,7 @@ export const storytelling = functions.runWith({
     } else {
       // Production: Try Gemini AI
       try {
-        const model = vertexAI.preview.getGenerativeModel({
+        const model = getVertexAI().preview.getGenerativeModel({
           model: "gemini-2.0-flash-001",
           generationConfig: {
             maxOutputTokens: 512,
@@ -393,7 +436,7 @@ Do not convert or change the time in any way.`;
     res.status(200).send(audioBuffer);
   } catch (error) {
     console.error("Unexpected storytelling error", error);
-    // 에러 발생 시에도 CORS 헤더 설정
+    // Set CORS headers even on error
     setCorsHeaders(res);
     res.status(500).json({ error: "Internal storytelling error" });
   }
@@ -478,7 +521,7 @@ async function transcribeAudio(audioUrl: string): Promise<string | null> {
     
     try {
       const [response] = await Promise.race([
-        speechClient.recognize(request),
+        getSpeechClient().recognize(request),
         new Promise<any>((_, reject) => 
           setTimeout(() => reject(new Error("STT timeout")), timeoutMs)
         ),
@@ -520,6 +563,8 @@ async function queryNearbyDrops(
   limit: number = 10
 ): Promise<any[]> {
   try {
+    console.log(`Querying nearby drops: lat=${latitude}, lng=${longitude}, radius=${radiusKm}km, mood=${mood || 'any'}, limit=${limit}`);
+    
     // Query drops collection
     let query = db.collection("drops").limit(limit);
     
@@ -529,26 +574,41 @@ async function queryNearbyDrops(
     }
     
     const snapshot = await query.get();
+    console.log(`Retrieved ${snapshot.size} total drops from Firestore`);
     const drops: any[] = [];
     
     snapshot.forEach((doc) => {
       const data = doc.data();
       const dropLocation = data.location;
       
-      // Check if location is a GeoPoint (handle both GeoPoint instance and plain object)
-      const isGeoPoint = dropLocation && (
-        dropLocation instanceof admin.firestore.GeoPoint ||
-        (typeof dropLocation === 'object' && 'latitude' in dropLocation && 'longitude' in dropLocation)
-      );
+      // Parse location from GeoPoint, plain object, or string format
+      let lat: number | undefined, lng: number | undefined;
       
-      if (isGeoPoint) {
-        // Extract latitude and longitude
-        const lat = dropLocation instanceof admin.firestore.GeoPoint 
-          ? dropLocation.latitude 
-          : (dropLocation as any).latitude;
-        const lng = dropLocation instanceof admin.firestore.GeoPoint 
-          ? dropLocation.longitude 
-          : (dropLocation as any).longitude;
+      if (!dropLocation) {
+        // No location
+      } else if (typeof dropLocation === 'string') {
+        // String format: "[47.83328812770472° N, 122.27492890589406° W]"
+        const match = dropLocation.match(/\[([\d.]+)°\s*([NS]),\s*([\d.]+)°\s*([EW])\]/);
+        if (match) {
+          lat = parseFloat(match[1]);
+          if (match[2] === 'S') lat = -lat;
+          lng = parseFloat(match[3]);
+          if (match[4] === 'W') lng = -lng;
+        } else {
+          // Try to extract numbers only
+          const numbers = dropLocation.match(/[\d.]+/g);
+          if (numbers && numbers.length >= 2) {
+            lat = parseFloat(numbers[0]);
+            lng = parseFloat(numbers[1]);
+          }
+        }
+      } else if (typeof dropLocation === 'object') {
+        // GeoPoint or plain object
+        lat = dropLocation.latitude ?? dropLocation._latitude;
+        lng = dropLocation.longitude ?? dropLocation._longitude;
+      }
+      
+      if (lat !== undefined && lng !== undefined) {
         // Calculate distance (Haversine formula - simplified)
         const distance = calculateDistance(
           latitude,
@@ -556,6 +616,8 @@ async function queryNearbyDrops(
           lat,
           lng
         );
+        
+        console.log(`Drop "${data.trackName}" by ${data.artistName}: distance=${distance.toFixed(2)}km, within radius=${distance <= radiusKm}`);
         
         if (distance <= radiusKm) {
           drops.push({
@@ -570,16 +632,19 @@ async function queryNearbyDrops(
             likeCount: data.likeCount || 0,
           });
         }
+      } else {
+        console.warn(`Drop "${data.trackName}" by ${data.artistName} has invalid location:`, dropLocation);
       }
     });
     
     // Sort by distance
     drops.sort((a, b) => a.distance - b.distance);
+    console.log(`Returning ${drops.length} drops within ${radiusKm}km radius`);
     return drops;
   } catch (error: any) {
     console.error("Error querying nearby drops:", error);
     console.error("Error details:", error?.message || String(error));
-    // Firestore 에러가 발생해도 빈 배열 반환 (에러로 처리하지 않음)
+    // Return empty array on Firestore error (do not treat as fatal)
     return [];
   }
 }
@@ -610,12 +675,23 @@ async function generateTtsAudio(text: string): Promise<string | null> {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     const defaultVoiceId = process.env.ELEVENLABS_DEFAULT_VOICE;
     
+    console.log("TTS Configuration check:", {
+      hasApiKey: !!apiKey,
+      hasVoiceId: !!defaultVoiceId,
+      voiceId: defaultVoiceId || "NOT SET"
+    });
+    
     if (!apiKey || !defaultVoiceId) {
-      console.error("TTS configuration missing");
+      console.error("TTS configuration missing:", {
+        apiKey: apiKey ? "SET" : "MISSING",
+        voiceId: defaultVoiceId ? "SET" : "MISSING"
+      });
       return null;
     }
     
     const elevenLabsUrl = `https://api.elevenlabs.io/v1/text-to-speech/${defaultVoiceId}`;
+    console.log("Calling ElevenLabs TTS API...", { url: elevenLabsUrl, textLength: text.length });
+    
     const response = await fetch(elevenLabsUrl, {
       method: "POST",
       headers: {
@@ -627,10 +703,16 @@ async function generateTtsAudio(text: string): Promise<string | null> {
     });
     
     if (!response.ok) {
-      console.error("TTS generation failed:", response.status);
+      const errorText = await response.text();
+      console.error("TTS generation failed:", {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
       return null;
     }
     
+    console.log("TTS API call successful, converting to base64...");
     // For now, return a placeholder URL. In production, you might want to:
     // 1. Upload to Cloud Storage and return public URL
     // 2. Return base64 encoded audio
@@ -638,9 +720,11 @@ async function generateTtsAudio(text: string): Promise<string | null> {
     // For now, we'll return a data URL pattern or handle it in frontend
     const audioBuffer = await response.arrayBuffer();
     const base64 = Buffer.from(audioBuffer).toString("base64");
+    console.log("TTS audio converted to base64, length:", base64.length);
     return `data:audio/mpeg;base64,${base64}`;
-  } catch (error) {
+  } catch (error: any) {
     console.error("TTS generation error:", error);
+    console.error("Error details:", error?.message || String(error));
     return null;
   }
 }
@@ -660,7 +744,7 @@ interface AiAskRequest {
  * Body: { text?: string; audioUrl?: string; location: { latitude, longitude } }
  * Response: { answerText: string; tracks: any[]; ttsAudioUrl?: string }
  */
-// CORS 헤더 설정 헬퍼 함수
+// CORS header helper
 const setCorsHeaders = (res: any) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
@@ -693,8 +777,9 @@ export const aiAsk = functions.runWith({
     // Check if FormData or JSON
     const contentType = req.headers["content-type"] || "";
     if (contentType.includes("multipart/form-data")) {
-      // FormData 처리 (busboy 사용)
+      // FormData handling (busboy)
       const Busboy = require("busboy");
+      const { Readable } = require("stream");
       const busboy = Busboy({ headers: req.headers });
       
       const fields: any = {};
@@ -729,7 +814,13 @@ export const aiAsk = functions.runWith({
           reject(err);
         });
         
+        // In Firebase Functions use req.rawBody (body may already be parsed)
+        if (req.rawBody) {
+          const stream = Readable.from(req.rawBody);
+          stream.pipe(busboy);
+        } else {
         req.pipe(busboy);
+        }
       });
       
       // Extract values from FormData
@@ -769,13 +860,15 @@ export const aiAsk = functions.runWith({
     let nearbyDrops: any[] = [];
     let transcribedText: string | null = null;
     
-    if (process.env.FUNCTIONS_EMULATOR === "true") {
-      // Local development: use mock data and skip STT
-      console.log("Running in emulator - using mock data");
-      nearbyDrops = []; // Empty array for local dev
-      transcribedText = userAudioUrl && !userText ? null : null; // Skip STT in emulator
-    } else {
-      // Production: actual Firestore query and STT
+    // Query nearby drops and transcribe audio (works in both emulator and production)
+    // GCP auth needed: gcloud auth application-default login
+    console.log("Querying nearby drops and processing audio...");
+    console.log("User location:", {
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude
+    });
+    
+    try {
       const results = await Promise.all([
         queryNearbyDrops(
           userLocation.latitude,
@@ -788,6 +881,25 @@ export const aiAsk = functions.runWith({
       ]);
       nearbyDrops = results[0];
       transcribedText = results[1];
+      console.log(`Found ${nearbyDrops.length} nearby drops`);
+      console.log("Nearby drops details:", nearbyDrops.map((drop: any) => ({
+        trackName: drop.trackName,
+        artistName: drop.artistName,
+        distance: drop.distance,
+        location: `${drop.distance}km away`
+      })));
+    } catch (queryErr: any) {
+      console.warn("Query failed (using empty drops):", queryErr?.message);
+      nearbyDrops = [];
+      // Still try STT separately if audio provided
+      if (userAudioUrl && !userText) {
+        try {
+          transcribedText = await transcribeAudio(userAudioUrl);
+        } catch (sttErr: any) {
+          console.warn("STT failed:", sttErr?.message);
+          transcribedText = null;
+        }
+      }
     }
 
     if (!userQuery && userAudioUrl) {
@@ -818,7 +930,7 @@ export const aiAsk = functions.runWith({
     
     // Try actual Gemini API (both local and production)
     try {
-      const model = vertexAI.preview.getGenerativeModel({
+      const model = getVertexAI().preview.getGenerativeModel({
         model: "gemini-2.0-flash-001",
         generationConfig: {
           maxOutputTokens: 1024,
@@ -829,29 +941,51 @@ export const aiAsk = functions.runWith({
 You can handle queries like:
 - "Are there any sad songs here?" - Find emotional/sad music nearby
 - "What music is nearby?" - List music drops in the area  
-- "Tell me about songs near Pike Place Market" - Location-specific queries
-- "Any good memories around Seattle downtown?" - Area-based searches
+- "Tell me about songs near City Hall" or "서울시청 주변에 뭐 있어?" - Location-specific queries
+- "Any good memories around downtown?" - Area-based searches
 - "Recommend something based on my mood" - Mood-based recommendations
 - "What's the vibe like in this neighborhood?" - Area atmosphere queries
 
-IMPORTANT GUIDELINES:
-1. When users mention a specific location (e.g., "near Pike Place", "around downtown Seattle"), acknowledge that location and describe the music memories found there.
-2. Share the stories and emotions behind each music drop warmly and personally.
-3. Never mention specific coordinates or numbers. Use descriptive location references instead.
-4. Be conversational, empathetic, and make users feel connected to the music community.
-5. If no drops are found, encourage the user to be the first to drop a memory there!
-6. Always respond in English with a friendly, DJ-like personality.
+CRITICAL RULES FOR LOCATION-BASED RESPONSES:
+1. **LIST ALL NEARBY DROPS**: When the user asks about music at a location, you MUST mention ALL drops that are nearby (within 5km), not just one. If there are 2 drops, mention both. If there are 5 drops, mention all 5.
+2. **DISTANCE-BASED PRIORITY**: Always prioritize drops by distance - mention the closest ones first, but include all nearby drops.
+3. **NO REPETITION**: Do not keep recommending the same drop if the user moves to a different location. Only recommend drops that are actually near the user's CURRENT location.
+4. **LOCATION AWARENESS**: If the user mentions a specific location (e.g., "City Hall", "서울시청", "Seoul City Hall"), acknowledge that location and ONLY mention drops that are actually near that location based on the distance data provided.
 
-Format your response naturally, mentioning specific songs, artists, and the feelings/stories behind them.`,
+IMPORTANT GUIDELINES:
+1. **CONTEXT AWARENESS**: Only provide music recommendations when the user's query is clearly related to music, location-based music searches, mood-based recommendations, or asking about nearby music memories. For general greetings (e.g., "Hello", "Hi", "안녕"), simply respond warmly without automatically providing music recommendations.
+2. When users mention a specific location (e.g., "near City Hall", "around downtown"), acknowledge that location and describe the music memories found there.
+3. **ALWAYS mention WHERE each music drop is located** - use the distance information (e.g., "0.5km away", "2km from here") to describe proximity. Say things like "There's a song about 0.3km away" or "I found music memories within 1km of your location".
+4. Share the stories and emotions behind each music drop warmly and personally, including WHERE they are located relative to the user.
+5. Never mention specific coordinates or exact lat/lng numbers. Use descriptive location references and distance instead (e.g., "a few blocks away", "about 1km from here", "nearby").
+6. Be conversational, empathetic, and make users feel connected to the music community.
+7. If no drops are found, encourage the user to be the first to drop a memory there!
+8. Always respond in English with a friendly, DJ-like personality.
+
+Format your response naturally, mentioning ALL nearby songs, artists, WHERE they are located (distance), and the feelings/stories behind them.`,
       });
 
       // Prepare user message with context
       const userMessage = userQuery;
 
-      // Prepare context with nearby drops for Gemini (no coordinates)
+      // Prepare context with nearby drops for Gemini (include distance info)
       const dropsContext = nearbyDrops.length > 0
-        ? `\n\nFound ${nearbyDrops.length} music drops nearby:\n${JSON.stringify(nearbyDrops.slice(0, 10), null, 2)}`
-        : `\n\nNo music drops nearby yet. Drop your music memory!`;
+        ? `\n\nFound ${nearbyDrops.length} music drops nearby (within 5km of user's location at ${userLocation.latitude}, ${userLocation.longitude}):\n${nearbyDrops.slice(0, 10).map((drop: any, idx: number) => 
+          `${idx + 1}. "${drop.trackName}" by ${drop.artistName} - ${drop.mood || 'neutral'} mood, ${(drop.distance || 0).toFixed(2)}km away${drop.userText ? ` - Note: "${drop.userText}"` : ''}`
+        ).join('\n')}\n\nCRITICAL INSTRUCTIONS:
+- The user is asking about music at their CURRENT LOCATION (${userLocation.latitude}, ${userLocation.longitude})
+- ONLY recommend drops that are ACTUALLY NEARBY (within 5km)
+- If the user asks about a specific location (e.g., "City Hall", "서울시청"), prioritize drops closest to that location
+- List ALL nearby drops, not just one
+- Always mention WHERE each drop is located using the distance (e.g., "0.5km away", "2km from here")
+- If multiple drops exist, mention ALL of them, not just the first one`
+        : `\n\nNo music drops found within 5km of the user's location (${userLocation.latitude}, ${userLocation.longitude}). Encourage them to be the first to drop a memory here!`;
+
+      console.log("Context being sent to Gemini:", {
+        userMessage,
+        dropsCount: nearbyDrops.length,
+        dropsContext: dropsContext.substring(0, 200) + "..."
+      });
 
       const queryWithContext = `${userMessage}${dropsContext}`;
 
@@ -885,7 +1019,42 @@ Format your response naturally, mentioning specific songs, artists, and the feel
       const questionLower = userQuery.toLowerCase();
       let mockResponse = "";
       
-      if (questionLower.includes("슬프") || questionLower.includes("우울") || questionLower.includes("sad")) {
+      // Check if query is music-related
+      const isMusicRelated = 
+        questionLower.includes("music") || 
+        questionLower.includes("song") || 
+        questionLower.includes("음악") || 
+        questionLower.includes("노래") ||
+        questionLower.includes("추천") || 
+        questionLower.includes("recommend") ||
+        questionLower.includes("슬프") || 
+        questionLower.includes("우울") || 
+        questionLower.includes("sad") ||
+        questionLower.includes("기쁘") || 
+        questionLower.includes("행복") || 
+        questionLower.includes("happy") ||
+        questionLower.includes("뭐") || 
+        questionLower.includes("what") || 
+        questionLower.includes("어떤") ||
+        questionLower.includes("memory") ||
+        questionLower.includes("memories") ||
+        questionLower.includes("nearby") ||
+        questionLower.includes("around") ||
+        questionLower.includes("here");
+      
+      // Check if it's just a greeting
+      const isGreeting = 
+        (questionLower === "hello" || 
+         questionLower === "hi" || 
+         questionLower === "안녕" || 
+         questionLower === "안녕하세요" ||
+         questionLower.startsWith("hello ") === false && 
+         questionLower.startsWith("hi ") === false) &&
+        !isMusicRelated;
+      
+      if (isGreeting) {
+        mockResponse = "Hello! I'm FlashBack, your emotional DJ. How can I help you discover music memories today?";
+      } else if (questionLower.includes("슬프") || questionLower.includes("우울") || questionLower.includes("sad")) {
         mockResponse = "I sense some sadness. Let me find some emotional music nearby. Sometimes music that shares your sadness can be a great comfort. 🎵";
       } else if (questionLower.includes("기쁘") || questionLower.includes("행복") || questionLower.includes("happy") || questionLower.includes("joy")) {
         mockResponse = "I feel your joy! Let me recommend some bright and cheerful music nearby. Share your good feelings with music! ✨";
@@ -893,15 +1062,50 @@ Format your response naturally, mentioning specific songs, artists, and the feel
         mockResponse = "I'll recommend music based on the memories nearby. Let me find songs that match your emotions! 🎶";
       } else if (questionLower.includes("뭐") || questionLower.includes("what") || questionLower.includes("어떤")) {
         mockResponse = "I'm looking at the music drops nearby. Let me find music that matches your emotions! 🎵";
+      } else if (isMusicRelated) {
+        mockResponse = "I'm searching for music memories nearby. Let me find songs that match your query! 🎶";
       } else {
-        mockResponse = "Hello! I'm your emotional DJ. I'm searching for music memories nearby. I'll warmly answer your questions! 🎶";
+        mockResponse = "Hello! I'm FlashBack, your emotional DJ. Ask me about music memories nearby, or what songs are around a specific location!";
       }
       
       responseText = mockResponse;
     }
 
-    // Extract recommended tracks from nearby drops (top 5 by relevance)
-    const recommendedTracks = nearbyDrops.slice(0, 5).map((drop) => ({
+    // Check if query is music-related before providing recommendations
+    const questionLower = userQuery.toLowerCase();
+    const isMusicRelated = 
+      questionLower.includes("music") || 
+      questionLower.includes("song") || 
+      questionLower.includes("음악") || 
+      questionLower.includes("노래") ||
+      questionLower.includes("추천") || 
+      questionLower.includes("recommend") ||
+      questionLower.includes("슬프") || 
+      questionLower.includes("우울") || 
+      questionLower.includes("sad") ||
+      questionLower.includes("기쁘") || 
+      questionLower.includes("행복") || 
+      questionLower.includes("happy") ||
+      questionLower.includes("뭐") || 
+      questionLower.includes("what") || 
+      questionLower.includes("어떤") ||
+      questionLower.includes("memory") ||
+      questionLower.includes("memories") ||
+      questionLower.includes("nearby") ||
+      questionLower.includes("around") ||
+      questionLower.includes("here");
+    
+    // Check if it's just a greeting
+    const isGreeting = 
+      (questionLower === "hello" || 
+       questionLower === "hi" || 
+       questionLower === "안녕" || 
+       questionLower === "안녕하세요") &&
+      !isMusicRelated;
+
+    // Extract recommended tracks from nearby drops (only if music-related query)
+    const recommendedTracks = (isMusicRelated && !isGreeting && nearbyDrops.length > 0)
+      ? nearbyDrops.slice(0, 5).map((drop) => ({
       trackName: drop.trackName,
       artistName: drop.artistName,
       mood: drop.mood,
@@ -909,10 +1113,13 @@ Format your response naturally, mentioning specific songs, artists, and the feel
       previewUrl: drop.previewUrl,
       userText: drop.userText,
       distance: drop.distance,
-    }));
+        }))
+      : []; // Empty array for non-music queries
 
     // Generate TTS audio
+    console.log("Generating TTS audio for response text...");
     const ttsAudioUrl = await generateTtsAudio(responseText);
+    console.log("TTS audio generation result:", ttsAudioUrl ? "Success" : "Failed (null)");
 
     // Return response
     res.status(200).json({

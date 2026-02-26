@@ -73,8 +73,8 @@ export const MapComponent = ({ drops, center, searchedLocation }: MapComponentPr
           defaultCenter={center}
           defaultZoom={13}
           gestureHandling={'greedy'}
-          disableDefaultUI={false}
-          zoomControl={true}
+          disableDefaultUI={true}
+          zoomControl={false}
           streetViewControl={false}
           mapTypeControl={false}
           fullscreenControl={false}
@@ -89,7 +89,7 @@ export const MapComponent = ({ drops, center, searchedLocation }: MapComponentPr
             />
           ))}
           
-          {/* 검색된 위치에 빨간 마커 표시 */}
+          {/* Red marker for searched location */}
           {searchedLocation && (
             <Marker
               position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }}

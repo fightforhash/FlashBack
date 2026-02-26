@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 type AudioPlayerProps = {
   audioUrl: string;
@@ -7,6 +7,9 @@ type AudioPlayerProps = {
   onError?: () => void;
   style?: React.CSSProperties;
 };
+
+// Waveform visualizer bar count
+const BAR_COUNT = 32;
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   audioUrl,
@@ -19,12 +22,63 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [bars, setBars] = useState<number[]>(new Array(BAR_COUNT).fill(4));
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number>(0);
+
+  // Set up Web Audio API analyser
+  const connectAnalyser = useCallback((audio: HTMLAudioElement) => {
+    // Avoid reconnecting
+    if (sourceRef.current) return;
+
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaElementSource(audio);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 128;
+      analyser.smoothingTimeConstant = 0.8;
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      sourceRef.current = source;
+      analyserRef.current = analyser;
+    } catch (err) {
+      console.warn('AudioContext unavailable:', err);
+    }
+  }, []);
+
+  // Animation loop for visualizer
+  const animate = useCallback(() => {
+    if (!analyserRef.current) {
+      // Fake idle animation
+      setBars((prev) =>
+        prev.map((_, i) => 4 + Math.sin(Date.now() / 600 + i * 0.5) * 2)
+      );
+    } else {
+      const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+      analyserRef.current.getByteFrequencyData(data);
+
+      const step = Math.floor(data.length / BAR_COUNT);
+      const newBars: number[] = [];
+      for (let i = 0; i < BAR_COUNT; i++) {
+        const val = data[i * step] || 0;
+        newBars.push(Math.max(4, (val / 255) * 40));
+      }
+      setBars(newBars);
+    }
+
+    rafRef.current = requestAnimationFrame(animate);
+  }, []);
 
   useEffect(() => {
     if (!audioUrl) return;
 
-    const audio = new Audio(audioUrl);
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
+    audio.src = audioUrl;
     audioRef.current = audio;
 
     const updateTime = () => setCurrentTime(audio.currentTime);
@@ -35,11 +89,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
+      cancelAnimationFrame(rafRef.current);
       onEnded?.();
     };
     const handleError = () => {
       setIsPlaying(false);
       setIsLoading(false);
+      cancelAnimationFrame(rafRef.current);
       onError?.();
     };
     const handleLoadStart = () => setIsLoading(true);
@@ -53,11 +109,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     audio.addEventListener('canplay', handleCanPlay);
 
     if (autoPlay) {
+      connectAnalyser(audio);
       audio.play().catch((err) => {
-        console.error('자동 재생 실패:', err);
+        console.error('Auto-play failed:', err);
         setIsLoading(false);
       });
       setIsPlaying(true);
+      rafRef.current = requestAnimationFrame(animate);
     }
 
     return () => {
@@ -69,8 +127,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       audio.removeEventListener('canplay', handleCanPlay);
       audio.pause();
       audio.src = '';
+      cancelAnimationFrame(rafRef.current);
     };
-  }, [audioUrl, autoPlay, onEnded, onError]);
+  }, [audioUrl, autoPlay, onEnded, onError, connectAnalyser, animate]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -78,12 +137,15 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
+      cancelAnimationFrame(rafRef.current);
     } else {
+      connectAnalyser(audioRef.current);
       audioRef.current.play().catch((err) => {
-        console.error('재생 실패:', err);
+        console.error('Playback failed:', err);
         setIsPlaying(false);
       });
       setIsPlaying(true);
+      rafRef.current = requestAnimationFrame(animate);
     }
   };
 
@@ -120,7 +182,35 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         ...style,
       }}
     >
-      {/* 재생/일시정지 버튼과 진행바 */}
+      {/* Waveform visualizer */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 2,
+          height: 44,
+          padding: '0 4px',
+        }}
+      >
+        {bars.map((h, i) => (
+          <div
+            key={i}
+            style={{
+              width: `${100 / BAR_COUNT - 1}%`,
+              height: `${h}px`,
+              minHeight: 3,
+              borderRadius: 2,
+              background: isPlaying
+                ? `linear-gradient(180deg, #667eea ${100 - h * 2}%, #764ba2)`
+                : '#c5c5c5',
+              transition: isPlaying ? 'height 0.08s ease' : 'height 0.4s ease, background 0.3s',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Play/pause + progress bar + time */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button
           onClick={togglePlay}
@@ -130,7 +220,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             height: '40px',
             borderRadius: '50%',
             border: 'none',
-            backgroundColor: '#007bff',
+            background: isPlaying
+              ? 'linear-gradient(135deg, #667eea, #764ba2)'
+              : '#007bff',
             color: 'white',
             cursor: isLoading ? 'not-allowed' : 'pointer',
             display: 'flex',
@@ -139,12 +231,13 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
             fontSize: '18px',
             opacity: isLoading ? 0.6 : 1,
             flexShrink: 0,
+            transition: 'background 0.3s',
           }}
         >
           {isLoading ? '⏳' : isPlaying ? '⏸️' : '▶️'}
         </button>
 
-        {/* 진행바 */}
+        {/* Progress bar */}
         <div style={{ flex: 1, position: 'relative' }}>
           <div
             onClick={handleProgressClick}
@@ -161,7 +254,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               style={{
                 width: `${progressPercentage}%`,
                 height: '100%',
-                backgroundColor: '#007bff',
+                background: 'linear-gradient(90deg, #667eea, #764ba2)',
                 borderRadius: '3px',
                 transition: 'width 0.1s linear',
               }}
@@ -169,7 +262,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           </div>
         </div>
 
-        {/* 시간 표시 */}
+        {/* Time */}
         <div
           style={{
             fontSize: '12px',
@@ -185,4 +278,3 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     </div>
   );
 };
-

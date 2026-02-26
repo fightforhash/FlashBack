@@ -7,7 +7,7 @@ type DropDetailModalProps = {
   onClose: () => void;
 };
 
-// Storytelling API 호출 함수 (AI가 컨텍스트 추가 후 TTS)
+// Storytelling API (AI context + TTS)
 const generateStorytellingAudio = async (drop: Drop): Promise<string | null> => {
   try {
     const apiUrl = import.meta.env.DEV
@@ -48,15 +48,15 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
   const [storytellingAudioUrl, setStorytellingAudioUrl] = useState<string | null>(null);
   const [isGeneratingStorytelling, setIsGeneratingStorytelling] = useState(false);
 
-  // drop이 변경되면 상태 초기화
+  // Reset state when drop changes
   useEffect(() => {
     if (drop) {
-      // 상태 리셋 (URL은 다음 useEffect에서 정리)
+      // Reset state (URL cleaned in next useEffect)
       setIsGeneratingStorytelling(false);
     }
   }, [drop?.id]);
 
-  // storytellingAudioUrl이 변경되거나 컴포넌트 언마운트 시 오디오 URL 정리
+  // Clean up audio URL when storytellingAudioUrl changes or on unmount
   useEffect(() => {
     return () => {
       if (storytellingAudioUrl) {
@@ -67,16 +67,16 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
 
   if (!drop) return null;
 
-  // 모달 닫기 핸들러 (오디오 정리 후 닫기)
+  // Close handler (clean up audio then close)
   const handleClose = () => {
-    // 오디오 정리
+    // Clean up audio
     if (storytellingAudioUrl) {
       URL.revokeObjectURL(storytellingAudioUrl);
     }
-    // 상태 리셋
+    // Reset state
     setStorytellingAudioUrl(null);
     setIsGeneratingStorytelling(false);
-    // 모달 닫기
+    // Close modal
     onClose();
   };
 
@@ -138,6 +138,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
         justifyContent: 'center',
         zIndex: 2000,
         padding: '20px',
+        animation: 'fadeIn 0.25s ease-out',
       }}
       onClick={handleClose}
     >
@@ -151,10 +152,11 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
           overflowY: 'auto',
           boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
           position: 'relative',
+          animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 닫기 버튼 */}
+        {/* Close button */}
         <button
           onClick={handleClose}
           style={{
@@ -177,7 +179,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
           ✕
         </button>
 
-        {/* 커버 이미지 */}
+        {/* Cover image */}
         <div
           style={{
             width: '100%',
@@ -201,7 +203,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
               🎵
             </div>
           )}
-          {/* 그라데이션 오버레이 */}
+          {/* Gradient overlay */}
           <div style={{
             position: 'absolute',
             bottom: 0,
@@ -212,9 +214,9 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
           }} />
         </div>
 
-        {/* 내용 */}
+        {/* Content */}
         <div style={{ padding: '24px' }}>
-          {/* 제목과 아티스트 */}
+          {/* Title and artist */}
           <div style={{ marginBottom: '20px' }}>
             <h2
               style={{
@@ -243,7 +245,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
             </div>
           </div>
 
-          {/* 무드 태그 */}
+          {/* Mood tag */}
           {drop.mood && (
             <div style={{ marginBottom: '20px' }}>
               <span
@@ -267,7 +269,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
             </div>
           )}
 
-          {/* 사용자 텍스트 */}
+          {/* User text */}
           {drop.text && (
             <div
               style={{
@@ -297,7 +299,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
             </div>
           )}
 
-          {/* 위치 및 생성일 정보 */}
+          {/* Location and date */}
           <div
             style={{
               marginBottom: '24px',
@@ -360,7 +362,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
             </div>
           </div>
 
-          {/* 미리보기 재생 버튼 */}
+          {/* Preview play button */}
           {drop.previewUrl && (
             <button
               onClick={handlePlayPreview}
@@ -396,7 +398,7 @@ export const DropDetailModal: React.FC<DropDetailModalProps> = ({ drop, onClose 
             </button>
           )}
 
-          {/* Storytelling 오디오 플레이어 */}
+          {/* Storytelling audio player */}
           {drop.text && (
             <div>
               {!storytellingAudioUrl ? (

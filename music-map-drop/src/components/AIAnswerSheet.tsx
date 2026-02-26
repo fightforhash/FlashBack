@@ -8,8 +8,9 @@ type AIAnswerSheetProps = {
   tracks: AiAnswerTrack[];
   error: string | null;
   ttsAudioUrl?: string;
-  onPlayAudio?: (audioUrl: string) => void;
+  onAudioEnded?: () => void; // Called when TTS audio finishes playing
   onDismiss?: () => void; // Called when the sheet should be dismissed
+  onClearAnswer?: () => void; // Called when user taps delete (final answer only)
   autoDismissSeconds?: number; // Auto dismiss after this many seconds (default: 15)
 };
 
@@ -19,8 +20,9 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
   tracks,
   error,
   ttsAudioUrl,
-  onPlayAudio,
+  onAudioEnded,
   onDismiss,
+  onClearAnswer,
   autoDismissSeconds = 15,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -47,27 +49,23 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
     }
   }, [status]);
 
-  // 에러가 변경되면 표시하고, 10초 후 자동으로 사라지게 함
+  // Show error and auto-dismiss after 10s
   useEffect(() => {
     if (error) {
       setDisplayError(error);
-      // 5초 후 완전히 제거 (9.5초 후 애니메이션 시작, 0.5초 애니메이션)
+      // Remove fully after 5s (animation starts at 9.5s, 0.5s duration)
       const timer = setTimeout(() => {
         setDisplayError(null);
       }, 5000);
 
       return () => clearTimeout(timer);
     } else {
-      // 에러가 없으면 즉시 제거
+      // Clear immediately when no error
       setDisplayError(null);
     }
   }, [error]);
 
-  useEffect(() => {
-    if (ttsAudioUrl && status === 'playing' && onPlayAudio) {
-      onPlayAudio(ttsAudioUrl);
-    }
-  }, [ttsAudioUrl, status, onPlayAudio]);
+  // AudioPlayer handles autoPlay, no need to call onPlayAudio here
 
   const handlePlayPreview = (previewUrl?: string) => {
     if (!previewUrl) return;
@@ -87,7 +85,7 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
   if (!isVisible && status === 'idle' && !displayError) {
     return null;
   }
-  
+
   if (status === 'idle' && !answerText && !displayError) {
     return null;
   }
@@ -109,9 +107,10 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
         backdropFilter: 'blur(10px)',
         zIndex: 1000,
         overflowY: 'auto',
+        animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      {/* 로딩 스켈레톤 */}
+      {/* Loading skeleton */}
       {status === 'thinking' && (
         <div style={{ padding: '20px', textAlign: 'center' }}>
           <div style={{ fontSize: '32px', marginBottom: '12px' }}>🤔</div>
@@ -146,7 +145,7 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
         </div>
       )}
 
-      {/* 에러 메시지 (10초 후 자동으로 사라짐) */}
+      {/* Error message (auto-dismiss after 10s) */}
       {displayError && (
         <div
           style={{
@@ -159,7 +158,7 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
             transition: 'opacity 0.5s ease-out, transform 0.5s ease-out',
           }}
           onAnimationEnd={() => {
-            // 애니메이션이 끝나면 박스 완전히 제거
+            // Remove box after animation ends
             setDisplayError(null);
           }}
         >
@@ -180,9 +179,42 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
         </div>
       )}
 
-      {/* AI 응답 텍스트 */}
+      {/* AI response text + clear button */}
       {answerText && status !== 'thinking' && (
-        <div style={{ marginBottom: '20px' }}>
+        <div style={{ marginBottom: '20px', position: 'relative' }}>
+          {/* Clear button: only for final answer */}
+          {onClearAnswer && (
+            <button
+              type="button"
+              onClick={onClearAnswer}
+              aria-label="Clear answer"
+              style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '0',
+                padding: '6px 12px',
+                border: 'none',
+                borderRadius: '8px',
+                background: '#f0f0f0',
+                color: '#666',
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#e0e0e0';
+                e.currentTarget.style.color = '#333';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#f0f0f0';
+                e.currentTarget.style.color = '#666';
+              }}
+            >
+              Go Back
+            </button>
+          )}
           <div
             style={{
               fontSize: '16px',
@@ -190,28 +222,30 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
               color: '#333',
               whiteSpace: 'pre-wrap',
               marginBottom: '16px',
+              paddingRight: onClearAnswer ? '60px' : 0,
             }}
           >
             {answerText}
           </div>
           
-          {/* TTS 오디오 플레이어 */}
+          {/* TTS audio player */}
           {ttsAudioUrl && (
             <AudioPlayer
               audioUrl={ttsAudioUrl}
               autoPlay={status === 'playing'}
               onEnded={() => {
-                // 상태는 부모에서 관리
+                onAudioEnded?.();
               }}
               onError={() => {
                 console.error('TTS audio playback failed');
+                onAudioEnded?.();
               }}
             />
           )}
         </div>
       )}
 
-      {/* 추천 트랙 리스트 */}
+      {/* Recommended tracks list */}
       {tracks.length > 0 && status !== 'thinking' && (
         <div>
           <div
@@ -319,7 +353,7 @@ export const AIAnswerSheet: React.FC<AIAnswerSheetProps> = ({
         </div>
       )}
 
-      {/* 숨겨진 오디오 엘리먼트 */}
+      {/* Hidden audio element */}
       <audio ref={audioRef} />
     </div>
   );
