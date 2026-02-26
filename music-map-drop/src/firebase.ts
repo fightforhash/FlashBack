@@ -4,7 +4,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator, collection, query, where, getDocs, deleteDoc, doc, limit } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAezUJJ8EITvFuu_sYTA8KtOqEYtXNZqeg",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
   authDomain: "flashback-25e2f.firebaseapp.com",
   projectId: "flashback-25e2f",
   storageBucket: "flashback-25e2f.firebasestorage.app",

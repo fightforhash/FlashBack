@@ -110,6 +110,7 @@ cd music-map-drop && npm install && npm run dev
 
 ```env
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+VITE_FIREBASE_API_KEY=your_firebase_web_api_key
 ```
 
 ### Backend (`functions/.env` for local / set in Firebase Console for production)
@@ -133,7 +134,7 @@ npm run build
 vercel --prod
 ```
 
-Set `VITE_GOOGLE_MAPS_API_KEY` in Vercel project environment.
+Set `VITE_GOOGLE_MAPS_API_KEY` and `VITE_FIREBASE_API_KEY` in Vercel project environment.
 
 ### Backend (Firebase)
 
