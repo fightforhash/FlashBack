@@ -196,4 +196,4 @@ FlashBack/
 
 ## License
 
-MIT © 2025
+**Thomas (Yoonsoo) Ha · Nate (Seungwon) Seon** · MIT © 2025

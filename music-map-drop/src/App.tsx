@@ -706,6 +706,22 @@ function App() {
 
       {/* 9. Toast Container */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Credits — corner */}
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '12px',
+          left: '12px',
+          zIndex: 500,
+          fontSize: '10px',
+          color: 'rgba(255,255,255,0.6)',
+          pointerEvents: 'none',
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+        }}
+      >
+        Thomas (Yoonsoo) Ha · Nate (Seungwon) Seon
+      </div>
     </div>
   );
 }
