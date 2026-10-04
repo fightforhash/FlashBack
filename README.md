@@ -1,328 +1,200 @@
-# ⚡ FlashBack: Resurrect Your Memories in Space
+# FlashBack
 
-![Project Status](https://img.shields.io/badge/Status-Active_Development-brightgreen?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Platform-PWA%20%7C%20Mobile-orange?style=for-the-badge)
+**Lost & Found Platform for Music Memories | Location-Based Drops | AI Curator | AR Discovery**
 
-> **"Music triggers memories. Locations hold them."**
->
-> **FlashBack** is an AR-based social platform that allows users to bury their cherished moments—songs, stories, and emotions—into physical locations ("Memory Spots"). Experience the world not just through sight, but through the emotional echoes of the past.
+[Live Demo](https://music-map-drop-gsfdp63on-fightforhashs-projects.vercel.app)
 
----
+> *"Music triggers memories. Locations hold them."*
 
-## 📖 Table of Contents
-- [The Problem & Solution](#-the-problem--solution)
-- [Key Features](#-key-features)
-- [Tech Stack](#-tech-stack)
-- [System Architecture](#-system-architecture)
-- [Getting Started](#-getting-started)
-- [Backend API Documentation](#-backend-api-documentation)
-- [Roadmap](#-roadmap)
+FlashBack is an AR-powered PWA where users drop songs and stories at GPS locations. Discover nearby music memories on the map or through the camera view—a time capsule for places.
 
 ---
 
-## 🎯 The Problem & Solution
+## Tech Stack
 
-**The Problem:** Current social media focuses on fleeting, real-time sharing. We lack a way to organically preserve deep, personal memories tied to specific physical spaces and music.
-
-**The Solution:** FlashBack bridges this gap. It's a **"Time Capsule for Places."**
-* **Drop:** Leave a song and a story at a specific GPS location.
-* **Discover:** Pass by that spot later (or let others pass by) to unlock the memory.
-* **Connect:** Feel the "Vibe" of the city through the collective memories of its people.
-
----
-
-## ✨ Key Features
-
-* **📍 Memory Spots (LBS):** Precise location-based content delivery using **Google Maps API**.
-* **🎵 Music Integration:** Search and embed songs directly via **iTunes Search API**.
-* **🧠 Emotional AI Curator:** An AI persona that understands your mood and recommends memories using **Google Vertex AI (Gemini)**.
-* **🗣️ Voice-First Experience:** Interactive voice conversations with the app using **ElevenLabs** (Low Latency TTS).
-* **📱 Progressive Web App (PWA):** Installable on iOS/Android without an app store, offering a native-like experience.
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 19 • TypeScript • Vite 7 • Google Maps (Places) • Web Audio API • DeviceOrientation API |
+| **Backend** | Firebase Cloud Functions (Node 20) • Firestore |
+| **AI / Voice** | Vertex AI (Gemini 1.5 Flash) • Google Cloud Speech-to-Text • ElevenLabs TTS |
+| **Deploy** | Vercel (PWA) • Firebase (Functions + Firestore) |
 
 ---
 
-## 🛠 Tech Stack
+## Features
 
-### Frontend (Mobile PWA)
-| Tech | Role |
-| :--- | :--- |
-| ![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB) | UI Framework |
-| ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white) | Type Safety & Logic |
-| ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white) | Build Tool (Lightning Fast) |
-| ![PWA](https://img.shields.io/badge/PWA-5A0FC8?style=flat&logo=pwa&logoColor=white) | App Capability (Installable) |
-
-### Backend & AI
-| Tech | Role |
-| :--- | :--- |
-| ![Firebase](https://img.shields.io/badge/Firebase-039BE5?style=flat&logo=Firebase&logoColor=white) | Firestore (DB) & Functions (Serverless) |
-| ![Google Cloud](https://img.shields.io/badge/Google_Cloud-4285F4?style=flat&logo=google-cloud&logoColor=white) | Vertex AI (Gemini Pro) |
-| ![ElevenLabs](https://img.shields.io/badge/ElevenLabs-000000?style=flat&logo=audio-technica&logoColor=white) | Realistic Voice Synthesis (TTS) |
+| Feature | Description |
+|---------|-------------|
+| **Location-Based Drops** | Create music drops at current or map-selected location; real-time sync via Firestore |
+| **AI Curator** | Voice or text questions → Gemini recommends nearby drops with emotional DJ persona |
+| **Voice-First UX** | Speak to the AI; hear responses with ElevenLabs TTS and waveform visualizer |
+| **AR View** | Camera overlay with compass; nearby drops (within 10 km) shown as bubbles by bearing/distance |
+| **My Drops** | Collapsible list of all drops; tap to center map or open detail |
+| **PWA** | Installable on iOS/Android; works offline for static shell |
 
 ---
 
-## 🏗 System Architecture
+## Architecture
 
-The core innovation lies in the **Voice-AI Pipeline**, designed for natural, emotional interaction.
-
-```mermaid
-graph LR
-    User["User Voice"] -->|Input| STT["Speech-to-Text"]
-    STT -->|Text| Brain["Gemini (Vertex AI)"]
-    Brain -->|Function Calling| DB[("Firestore Memory")]
-    DB -->|Context| Brain
-    Brain -->|Response| TTS["ElevenLabs Turbo v2"]
-    TTS -->|Audio Stream| User
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  CLIENT (Vercel)                                                 │
+│  React PWA → Firestore (onSnapshot) + Cloud Functions (callable) │
+│  Map • DropCreator • AIAnswerSheet • ARView • MicButton           │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  FIREBASE / GCP                                                 │
+│  Firestore (drops) ← createDrop                                 │
+│  aiAsk → Vertex AI + STT + ElevenLabs TTS                      │
+│  tts, storytelling → ElevenLabs                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Getting Started
+## Screenshots
+
+| Map + Drops | AR View | AI Chat |
+|-------------|---------|---------|
+| Google Maps with music markers; search location; create drop | Camera + compass; nearby drops as bubbles | Voice/text to AI; TTS + track list |
+
+---
+
+## What I Learned
+
+- **Lazy init for Cloud Functions**: Heavy SDKs (Vertex AI, Speech) moved to lazy `require()` to avoid 10s load timeout during `firebase deploy`.
+- **Firestore rules**: Default deny blocked client reads; added `firestore.rules` with `allow read, create` for `drops` so the PWA could load markers and AR counts.
+- **GPS on mobile**: Permission prompt often doesn’t appear on auto-invoke; added an explicit “Enable” button and reuse App-level `watchPosition` result in DropCreator instead of calling `getCurrentPosition` again.
+- **Node runtime**: GCF Gen1 does not support Node 24; set `engines.node` to `20` in `functions/package.json` for deploy.
+
+---
+
+## Running Locally
 
 ### Prerequisites
-- Node.js 20+ (or 24 for Functions)
-- Firebase CLI
-- Google Cloud Project with APIs enabled
 
-### Installation
+- Node.js 20+
+- Firebase CLI: `npm i -g firebase-tools`
+- Google Cloud project with Firebase, Vertex AI, Speech-to-Text, and Cloud Functions enabled
+
+### Option 1: Frontend only (uses production backend)
+
 ```bash
-# Clone the repository
-git clone https://github.com/nateseon/FlashBack.git
-cd FlashBack
-
-# Install frontend dependencies
 cd music-map-drop
 npm install
+cp .env.example .env   # set VITE_GOOGLE_MAPS_API_KEY
+npm run dev
+# → http://localhost:5173
+```
 
-# Install backend dependencies
-cd ../functions
-npm install
+### Option 2: Full local (emulator + seed)
+
+```bash
+# Terminal 1 — Functions + Firestore emulator
+cd functions && npm install && npm run serve:full
+# → Functions: 5001, Firestore: 8080, UI: 4000
+
+# Terminal 2 — Seed emulator (so map/AR show data)
+cd functions && npm run seed:emulator
+
+# Terminal 3 — Frontend (points to emulator in DEV)
+cd music-map-drop && npm install && npm run dev
 ```
 
 ---
 
-## 📚 Backend API Documentation
+## Environment Variables
 
-### Backend – ElevenLabs TTS (Day 5)
+### Frontend (`music-map-drop/.env`)
 
-#### Environment Variables/Secrets Setup
-- For Functions deployment (recommended):  
-  `firebase functions:secrets:set ELEVENLABS_API_KEY`  
-  `firebase functions:secrets:set ELEVENLABS_DEFAULT_VOICE`
-- For local emulator usage:  
-  - Add to `functions/.env` in the following format (do not commit to Git):  
-    ```
-    ELEVENLABS_API_KEY=<your_key>
-    ELEVENLABS_DEFAULT_VOICE=<voice_id>
-    ```  
-  - Or use `firebase functions:secrets:access ELEVENLABS_API_KEY` to retrieve and inject as environment variable before starting the emulator.
+```env
+VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+VITE_FIREBASE_API_KEY=your_firebase_web_api_key
+```
 
-#### HTTPS Function: POST /tts
-- File: `functions/src/index.ts`  
-- Request body (JSON): `{ "text": string, "voiceId"?: string }`  
-  - If `voiceId` is not provided, `ELEVENLABS_DEFAULT_VOICE` will be used.
-- Response: `audio/mpeg` MP3 binary
+### Backend (`functions/.env` for local / set in Firebase Console for production)
 
-#### Local Emulator Testing
+```env
+ELEVENLABS_API_KEY=your_elevenlabs_key
+ELEVENLABS_DEFAULT_VOICE=your_voice_id
+```
+
+GCP project is used for Vertex AI, Speech-to-Text, and Firestore (ADC or service account).
+
+---
+
+## Deployment
+
+### Frontend (Vercel)
+
+```bash
+cd music-map-drop
+npm run build
+vercel --prod
+```
+
+Set `VITE_GOOGLE_MAPS_API_KEY` and `VITE_FIREBASE_API_KEY` in Vercel project environment.
+
+### Backend (Firebase)
+
 ```bash
 cd functions
 npm run build
-cd ..
-firebase emulators:start --only functions
-```
-Test:
-```bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Hello, FlashBack ElevenLabs test."}' \
-  http://localhost:5001/<project-id>/us-central1/tts \
-  --output local-test.mp3
+firebase deploy --only functions
 ```
 
-#### Production Testing
-```bash
-cd functions
-npm run build
-cd ..
-firebase deploy --only functions:tts
+### Firestore rules
 
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"text":"Production TTS test."}' \
-  https://us-central1-<project-id>.cloudfunctions.net/tts \
-  --output prod-test.mp3
+```bash
+firebase deploy --only firestore:rules
+```
+
+### Seed production (optional)
+
+```bash
+cd functions && npm run seed
 ```
 
 ---
 
-### Backend – Gemini AI Integration (Day 8-10)
+## Project Structure
 
-#### Environment Setup
-- Vertex AI automatically authenticates using the GCP project where Firebase Functions runs.
-- No additional API key setup required (uses GCP project default authentication).
-
-#### HTTPS Function: POST /ai/ask
-
-**Request Body (JSON):**
-```json
-{
-  "text": "Are there any sad songs here?",
-  "audioUrl": "https://...",  // Optional (STT implemented - Day 11-12)
-  "location": {
-    "latitude": 37.5665,
-    "longitude": 126.9780
-  }
-}
 ```
-
-**Response (JSON):**
-```json
-{
-  "answerText": "There are a few songs with a sad mood nearby...",
-  "tracks": [
-    {
-      "trackName": "Song Title",
-      "artistName": "Artist Name",
-      "mood": "sad",
-      "coverUrl": "https://...",
-      "previewUrl": "https://...",
-      "userText": "I listened to this song while...",
-      "distance": 0.5
-    }
-  ],
-  "ttsAudioUrl": "data:audio/mpeg;base64,..."  // Optional
-}
+FlashBack/
+├── music-map-drop/          # PWA frontend
+│   ├── src/
+│   │   ├── components/      # Map, ARView, DropCreator, AIAnswerSheet, etc.
+│   │   ├── hooks/          # useAiConversation
+│   │   ├── api/            # iTunes search, AI request helpers
+│   │   ├── types/
+│   │   ├── App.tsx
+│   │   └── firebase.ts
+│   ├── public/manifest.webmanifest
+│   └── vercel.json
+├── functions/              # Cloud Functions
+│   ├── src/
+│   │   ├── index.ts        # createDrop, aiAsk, tts, storytelling
+│   │   └── seedDrops.ts    # Demo seed (Seoul + Seattle)
+│   └── package.json
+├── firestore.rules
+├── firebase.json
+└── README.md
 ```
-
-**Features:**
-- Uses Gemini 1.5 Flash model
-- Responds with an emotional DJ persona
-- Queries location-based music drops from Firestore (5km radius)
-- Converts response text to ElevenLabs TTS (returns base64-encoded audio URL)
-
-#### Local Testing
-```bash
-cd functions
-npm run build
-cd ..
-firebase emulators:start --only functions,firestore
-```
-
-Test request:
-```bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "What songs are nearby?",
-    "location": {
-      "latitude": 37.5665,
-      "longitude": 126.9780
-    }
-  }' \
-  http://localhost:5001/<project-id>/us-central1/aiAsk
-```
-
-#### Deployment
-```bash
-cd functions
-npm run build
-cd ..
-firebase deploy --only functions:aiAsk
-```
-
-#### API Contract (For Frontend)
-
-**Endpoint:** `POST /ai/ask`
-
-**Request:**
-- `text` (string, optional): User question text
-- `audioUrl` (string, optional): Audio URL (STT implemented - Day 11-12)
-- `location` (object, required): `{ latitude: number, longitude: number }`
-
-**Response:**
-- `answerText` (string): AI response text
-- `tracks` (array): Recommended track list (max 5 tracks)
-- `ttsAudioUrl` (string, optional): TTS audio URL (base64 data URL)
 
 ---
 
-### Backend – STT Integration (Day 11-12)
+## API Summary
 
-#### Speech-to-Text Pipeline
-
-**Complete Pipeline:**
-```
-[Audio URL] → [Google Cloud Speech-to-Text] → [Transcribed Text] 
-→ [Gemini AI] → [Response Text] → [ElevenLabs TTS] → [Audio Stream]
-```
-
-#### Features
-- **Google Cloud Speech-to-Text** integration
-- Supports Korean (ko-KR) and English (en-US) with automatic language detection
-- Optimized for web audio formats (WEBM_OPUS, 48kHz)
-- Parallel processing: STT and Firestore queries run simultaneously for better latency
-
-#### Audio Format Support
-- **Encoding**: WEBM_OPUS (default from MediaRecorder API)
-- **Sample Rate**: 48kHz
-- **Languages**: Korean (primary), English (fallback)
-- **Model**: `latest_long` (optimized for longer audio)
-
-#### Performance Optimization (Day 13-14)
-- **Parallel Processing**: STT transcription and Firestore queries run in parallel
-- **Target Latency**: < 3 seconds end-to-end
-- **Error Handling**: Graceful fallback to text input if STT fails
-
-#### Testing Audio Input
-```bash
-# Test with audio URL
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "audioUrl": "https://example.com/audio.webm",
-    "location": {
-      "latitude": 37.5665,
-      "longitude": 126.9780
-    }
-  }' \
-  http://localhost:5001/<project-id>/us-central1/aiAsk
-```
-
-#### Environment Setup
-- Google Cloud Speech-to-Text API must be enabled in your GCP project
-- No additional API keys required (uses GCP project default authentication)
-- Enable API: `gcloud services enable speech.googleapis.com`
+| Endpoint | Type | Description |
+|----------|------|-------------|
+| `createDrop` | Callable | Create a music drop at lat/lng; returns `{ success, id }`. |
+| `aiAsk` | HTTPS | Text or audio + location → Gemini + nearby drops → answer + optional TTS URL. |
+| `tts` | HTTPS | Text → ElevenLabs MP3. |
+| `storytelling` | HTTPS | Drop context + AI narrative → TTS for detail modal. |
 
 ---
 
-## 🗺 Roadmap
+## License
 
-- [x] **Week 1**: Foundation & Data Layer
-  - [x] Firebase setup & Firestore schema
-  - [x] Google Maps integration
-  - [x] Music drop creation & retrieval
-  - [x] ElevenLabs TTS integration
-
-- [x] **Week 2**: AI Integration
-  - [x] Gemini AI integration with emotional DJ persona
-  - [x] Function Calling for Firestore queries
-  - [x] Speech-to-Text pipeline
-  - [x] Voice-first experience optimization
-
-- [ ] **Week 3**: AR & Polish
-  - [ ] AR view with camera overlay
-  - [ ] UI/UX polish & animations
-  - [ ] PWA deployment on Vercel
-  - [ ] Demo video production
-
----
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
----
-
-## 🙏 Acknowledgments
-
-Built with ❤️ for preserving memories in space and time.
+**Thomas (Yoonsoo) Ha · Nate (Seungwon) Seon** · MIT © 2025

@@ -1,30 +1,54 @@
-import { APIProvider, Map, Marker } from '@vis.gl/react-google-maps';
-import type { MapCameraChangedEvent } from '@vis.gl/react-google-maps';
+import { APIProvider, Map, Marker, useMap } from '@vis.gl/react-google-maps';
+import { useState, useEffect, useRef } from 'react';
 import type { Drop } from '../types/drop';
 
-console.log('VITE key:', import.meta.env.VITE_GOOGLE_MAPS_API_KEY);
+// Google Maps types are loaded via @vis.gl/react-google-maps
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-// Debug: surface the key detection in devtools (remove for production)
-console.log("VITE_GOOGLE_MAPS_API_KEY =", API_KEY);
 
-// Debug: Check if API key is loaded (remove in production)
-if (!API_KEY || API_KEY === 'your_api_key_here') {
-  console.error('⚠️ Google Maps API key is missing or not set!');
-  console.error('Please set VITE_GOOGLE_MAPS_API_KEY in your .env file');
-}
 
-type MapComponentProps = {
-  drops: Drop[];
-  center: { lat: number; lng: number };
+
+// Map Controls Component - handles panning to new locations
+const MapControls = ({ targetCenter }: { targetCenter?: { lat: number; lng: number } }) => {
+  const map = useMap();
+  const prevCenter = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Pan to target center when it changes
+  useEffect(() => {
+    if (!map || !targetCenter) return;
+    
+    // Check if center actually changed
+    if (prevCenter.current && 
+        prevCenter.current.lat === targetCenter.lat && 
+        prevCenter.current.lng === targetCenter.lng) {
+      return;
+    }
+    
+    console.log('Panning map to:', targetCenter);
+    map.panTo(targetCenter);
+    map.setZoom(15);
+    prevCenter.current = targetCenter;
+  }, [map, targetCenter]);
+
+  return null;
 };
 
-export const MapComponent = ({ drops, center }: MapComponentProps) => {
-  // initial location fallback: Seattle
-  const defaultCenter = { lat: 47.6205, lng: -122.3493 };
+interface MapComponentProps {
+  drops: Drop[];
+  center: { lat: number; lng: number };
+  searchedLocation?: { lat: number; lng: number; name?: string } | null;
+}
+
+export const MapComponent = ({ drops, center, searchedLocation }: MapComponentProps) => {
+  const [mapCenter, setMapCenter] = useState(center);
+  
+  // Update map center when prop changes (e.g., when searching a location)
+  useEffect(() => {
+    setMapCenter(center);
+  }, [center]);
   
   // Show error message if API key is missing
-  if (!API_KEY || API_KEY === 'VITE_GOOGLE_MAPS_API_KEY') {
+  if (!API_KEY || API_KEY === 'your_api_key_here' || API_KEY === 'VITE_GOOGLE_MAPS_API_KEY') {
     return (
       <div style={{ 
         width: '100vw', 
@@ -38,26 +62,25 @@ export const MapComponent = ({ drops, center }: MapComponentProps) => {
       }}>
         <h2>⚠️ Google Maps API Key Missing</h2>
         <p>Please set VITE_GOOGLE_MAPS_API_KEY in your .env file</p>
-        <p style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-          Check the console for more details
-        </p>
       </div>
     );
   } 
 
   return (
-    <APIProvider apiKey={API_KEY}>
+    <APIProvider apiKey={API_KEY} libraries={['places']}>
       <div style={{ width: '100vw', height: '100vh' }}>
         <Map
-          defaultCenter={defaultCenter}
-          center={center || defaultCenter}
+          defaultCenter={center}
           defaultZoom={13}
-          gestureHandling={'greedy'} // improve mobile touch experience
-          disableDefaultUI={true}    // hide default UI
-          onCameraChanged={(ev: MapCameraChangedEvent) =>
-            console.log('camera changed:', ev.detail.center, 'zoom:', ev.detail.zoom)
-          }
+          gestureHandling={'greedy'}
+          disableDefaultUI={true}
+          zoomControl={false}
+          streetViewControl={false}
+          mapTypeControl={false}
+          fullscreenControl={false}
         >
+          <MapControls targetCenter={mapCenter} />
+          
           {drops.map((drop) => (
             <Marker
               key={drop.id}
@@ -65,6 +88,14 @@ export const MapComponent = ({ drops, center }: MapComponentProps) => {
               title={drop.title}
             />
           ))}
+          
+          {/* Red marker for searched location */}
+          {searchedLocation && (
+            <Marker
+              position={{ lat: searchedLocation.lat, lng: searchedLocation.lng }}
+              title={searchedLocation.name || 'Searched Location'}
+            />
+          )}
         </Map>
       </div>
     </APIProvider>
