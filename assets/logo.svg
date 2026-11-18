@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-labelledby="t">
+  <title id="t">FlashBack logo: a map pin holding a vinyl record, circled by a rewind arrow</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="80%">
+      <stop offset="0" stop-color="#2b2b30"/>
+      <stop offset="1" stop-color="#121214"/>
+    </radialGradient>
+    <linearGradient id="pin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff4f6e"/>
+      <stop offset="1" stop-color="#e01f3f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="500" fill="url(#bg)"/>
+
+  <!-- Rewind arrow: the "back" in FlashBack. Gap at the bottom for the pin's point. -->
+  <path d="M 450 256.6 A 100 100 0 1 0 350 256.6" fill="none" stroke="#ffde59" stroke-width="11" stroke-linecap="round"/>
+  <polygon points="366,266 342,268 356,245" fill="#ffde59"/>
+
+  <!-- Map pin: the place a memory is dropped. -->
+  <path d="M400 302 C 362 254, 330 218, 330 172 A 70 70 0 1 1 470 172 C 470 218, 438 254, 400 302 Z" fill="url(#pin)"/>
+
+  <!-- Vinyl record inside the pin head: the song. -->
+  <circle cx="400" cy="172" r="47" fill="#151517"/>
+  <circle cx="400" cy="172" r="39" fill="none" stroke="#2c2c31" stroke-width="2"/>
+  <circle cx="400" cy="172" r="31" fill="none" stroke="#2c2c31" stroke-width="2"/>
+  <path d="M 372 150 A 36 36 0 0 1 404 137" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="400" cy="172" r="16" fill="#ffde59"/>
+  <circle cx="400" cy="172" r="3.5" fill="#151517"/>
+
+  <text x="400" y="398" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="-1.5" fill="#ffffff">FlashBack</text>
+  <text x="400" y="440" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#b4b4bc">music, pinned to the places you remember</text>
+</svg>

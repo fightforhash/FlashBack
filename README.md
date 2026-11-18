@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="FlashBack logo" width="520">
+</p>
+
 # ⚡ FlashBack: Resurrect Your Memories in Space
 
 ![Project Status](https://img.shields.io/badge/Status-Active_Development-brightgreen?style=for-the-badge)
